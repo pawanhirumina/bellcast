@@ -101,6 +101,48 @@ The desktop shell loads your deployed instance (or `http://localhost:3000` while
 developing). It keeps a tray icon, polls the API in the background and fires native
 notifications even when the window is hidden.
 
+### Install
+
+Download the installer for your distro from the
+[latest release](https://github.com/pawanhirumina/bellcast/releases/latest).
+
+**Fedora / RHEL:**
+
+```bash
+sudo dnf install https://github.com/pawanhirumina/bellcast/releases/download/v0.1.0/Bellcast-0.1.0-1.x86_64.rpm
+```
+
+**Debian / Ubuntu:**
+
+```bash
+curl -LO https://github.com/pawanhirumina/bellcast/releases/download/v0.1.0/Bellcast_0.1.0_amd64.deb
+sudo apt install ./Bellcast_0.1.0_amd64.deb
+```
+
+Use the `.rpm` or `.deb` package instead of the AppImage.
+
+### Unacceptable TLS certificate
+
+If the desktop app shows **“Unacceptable TLS certificate”**, the instance URL and
+certificate are fine. The AppImage bundles Debian/Ubuntu TLS libraries, which cannot
+find the CA bundle on some distros (for example Fedora 44).
+
+Install the native package with the command above (`.rpm` on Fedora/RHEL, `.deb` on
+Debian/Ubuntu), then remove the AppImage autostart entry so the broken build does not
+launch at login:
+
+```bash
+rm -f ~/.config/autostart/Bellcast.desktop
+```
+
+If you must keep using the AppImage on Fedora, create the compatibility symlink before
+launching it:
+
+```bash
+sudo ln -s /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \
+  /etc/pki/tls/certs/ca-certificates.crt
+```
+
 ### Fedora build prerequisites
 
 ```bash
@@ -121,35 +163,6 @@ pnpm install
 pnpm desktop:dev      # development build
 pnpm desktop:build    # deb + rpm + AppImage in apps/desktop/src-tauri/target/release/bundle
 ```
-
-### Build on GitHub instead
-
-Compiling Rust locally is optional. The **Desktop build** workflow builds the Linux
-installers on GitHub Actions:
-
-1. Open **Actions → Desktop build → Run workflow** (or push a change under `apps/desktop`).
-2. Download the `bellcast-linux-x86_64` artifact when it finishes.
-3. Extract the zip and install the `.deb` or `.rpm`, or run the `.AppImage`.
-
-Pushing a tag such as `v0.1.0` publishes the same files on a GitHub Release.
-
-### Cut a release
-
-1. Bump `version` in `apps/desktop/src-tauri/tauri.conf.json` (and `apps/desktop/package.json`).
-2. Either push a tag:
-
-   ```bash
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
-
-   or open **Actions → Release → Run workflow** and leave the version empty to use the
-   configured version.
-3. The workflow builds `.deb`, `.rpm` and `.AppImage`, then publishes them at
-   **https://github.com/pawanhirumina/bellcast/releases**.
-
-The separate **Desktop build** workflow only uploads artifacts for testing and never
-creates a release.
 
 The first launch asks for the instance URL and API key, verifies `/api/v1/health`, then
 opens the web UI already signed in. Configuration is stored in
