@@ -133,6 +133,24 @@ installers on GitHub Actions:
 
 Pushing a tag such as `v0.1.0` publishes the same files on a GitHub Release.
 
+### Cut a release
+
+1. Bump `version` in `apps/desktop/src-tauri/tauri.conf.json` (and `apps/desktop/package.json`).
+2. Either push a tag:
+
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+   or open **Actions → Release → Run workflow** and leave the version empty to use the
+   configured version.
+3. The workflow builds `.deb`, `.rpm` and `.AppImage`, then publishes them at
+   **https://github.com/pawanhirumina/bellcast/releases**.
+
+The separate **Desktop build** workflow only uploads artifacts for testing and never
+creates a release.
+
 The first launch asks for the instance URL and API key, verifies `/api/v1/health`, then
 opens the web UI already signed in. Configuration is stored in
 `~/.config/app.bellcast.desktop/config.json` with owner-only permissions.
