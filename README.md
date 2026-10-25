@@ -186,3 +186,7 @@ planned.
 
 Publishing accepts JSON or plain text. `Title`, `Priority` (`min`…`max` or `1`–`5`), `Tags`
 and `Click` also work as headers, and `Idempotency-Key` makes retries safe per topic.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
