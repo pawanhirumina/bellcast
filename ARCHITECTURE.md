@@ -75,8 +75,8 @@ Flow:
 ```
 POST /api/v1/session   { "key": "..." }
   → compare (SHA-256 + timingSafeEqual)
-  → Set-Cookie: __Host-bellcast_session=<key>;
-      HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=31536000
+  → Set-Cookie: bellcast_session=<key>;
+      HttpOnly; Secure (in production); SameSite=Lax; Path=/; Max-Age=31536000
 ```
 
 - All `/app` and `/api/v1` reads use the cookie.
@@ -85,8 +85,9 @@ POST /api/v1/session   { "key": "..." }
 - Rotating the env key invalidates every existing session immediately.
 - No users table, no passwords, no OAuth.
 
-The desktop app hands the key to the web UI through a Tauri initialization script (see §9);
-the web UI immediately exchanges it for the cookie and deletes the global.
+The desktop app opens `/connect#key=<key>` so the web UI can exchange the key for the
+cookie without the user pasting it twice. The fragment stays in the webview. The Rust
+poller keeps its own copy of the key for background delivery (see §8).
 
 ---
 
@@ -363,39 +364,28 @@ frontend.
 
 ### Lifecycle
 
-1. First launch: local onboarding page (bundled HTML).
-   - Instance URL (`https://...`, `http://localhost` allowed in dev)
-   - API key
-   - “Start at login” (default on)
-   - Rust validates with `GET /api/v1/health`, then `POST /api/v1/session`.
-2. Store URL in `config.json`; store key in the OS keychain.
-3. Register a **runtime capability** scoped to the exact instance origin:
-
-   ```rust
-   app.add_capability(
-     CapabilityBuilder::new("remote-instance")
-       .remote(instance_origin.clone())
-       .window("main")
-       .permission("notification:default")
-       .permission("bellcast:allow-notify")
-       .permission("bellcast:allow-open-external")
-   )?;
-   ```
-
-   `Manager::add_capability` is available with the default `dynamic-acl` feature, which solves
-   the “self-hosters have arbitrary domains” problem without shipping a wildcard capability.
-4. Create the main window. Start at a bundled **holding page** that pings `/api/v1/health`
-   (a few retries) and then navigates to the instance. This gives a sane offline cold start
-   and a “Settings / Retry” path instead of a webview error page.
-5. Inject bootstrap data into the remote page:
+1. First launch: a bundled onboarding page collects the instance URL and API key.
+   Rust validates them with `GET /api/v1/health` before writing anything.
+2. Store both in `config.json` under the app config directory (owner-only permissions in
+   v1; OS keychain is a follow-up). Enable start at login.
+3. Open `/connect#key=<key>` in the main window. The web app POSTs the key to
+   `/api/v1/session`, gets the HttpOnly cookie and redirects to `/app`. The fragment is
+   removed from the address bar immediately and never leaves the webview.
+4. Inject a tiny bootstrap global before the page loads:
 
    ```js
-   window.__BELLCAST__ = { instanceUrl, apiKey, platform: "desktop" };
+   window.__BELLCAST__ = {
+     platform: "desktop",
+     instanceUrl,
+     openExternal(url) { /* custom-scheme hand-off to Rust */ }
+   };
    ```
 
-   The web app exchanges the key for the cookie and deletes the global. On later launches the
-   cookie may still be valid; the key in the keychain allows re-authentication without user
-   input.
+   `notify` is intentionally absent: native notifications come from Rust, so remote pages
+   need no Tauri IPC or runtime capability at all.
+5. Start the background poller. It long-polls `/api/v1/sync` with `X-API-Key`, persists the
+   cursor, and raises a native notification for each message. It skips notifications while
+   the main window is focused, because the feed is already visible.
 
 ### Native behavior
 
