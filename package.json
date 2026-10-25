@@ -12,6 +12,9 @@
     "start": "pnpm --filter web start",
     "lint": "pnpm --filter web lint",
     "typecheck": "pnpm --filter web typecheck",
+    "desktop:dev": "pnpm --filter desktop dev",
+    "desktop:build": "pnpm --filter desktop build",
+    "desktop:icons": "pnpm --filter desktop icons",
     "db:push": "supabase db push"
   }
 }

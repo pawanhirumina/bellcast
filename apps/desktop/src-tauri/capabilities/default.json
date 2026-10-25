@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Local onboarding window. Remote instances get no Tauri APIs.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
