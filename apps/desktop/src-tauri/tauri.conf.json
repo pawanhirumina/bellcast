@@ -16,7 +16,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "appimage"],
+    "targets": ["deb", "rpm", "appimage"],
     "category": "Utility",
     "shortDescription": "Self-hosted push notifications",
     "longDescription": "Bellcast is a self-hosted push notification client. It runs in the tray, keeps a long-poll connection to your instance open, and shows native notifications.",
