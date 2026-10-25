@@ -164,12 +164,24 @@ fn navigate_to_instance(app: &AppHandle, base: &str, api_key: &str) -> Result<()
     Ok(())
 }
 
+fn app_home_url() -> Result<Url, String> {
+    // The bundled frontend is served from the `tauri` custom protocol on Linux and
+    // macOS, and from tauri.localhost on Windows.
+    let raw = if cfg!(target_os = "windows") {
+        "http://tauri.localhost/index.html"
+    } else {
+        "tauri://localhost/index.html"
+    };
+    Url::parse(raw).map_err(|error| format!("Could not build the onboarding URL: {error}"))
+}
+
 fn show_onboarding(app: &AppHandle) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
         return Err("The main window is not ready.".into());
     };
+    let url = app_home_url()?;
     window
-        .navigate(WebviewUrl::App("index.html".into()))
+        .navigate(url)
         .map_err(|error| error.to_string())?;
     window.show().map_err(|error| error.to_string())?;
     window.set_focus().map_err(|error| error.to_string())?;
@@ -386,7 +398,7 @@ fn spawn_poller(app: AppHandle) {
             };
 
             if !configured || paused {
-                tokio_sleep(Duration::from_secs(3)).await;
+                tokio::time::sleep(Duration::from_secs(3)).await;
                 continue;
             }
 
@@ -403,18 +415,18 @@ fn spawn_poller(app: AppHandle) {
                 .await;
 
             let Ok(response) = response else {
-                tokio_sleep(Duration::from_secs(5)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             };
 
             if !response.status().is_success() {
                 // Bad key, missing instance or a transient upstream error.
-                tokio_sleep(Duration::from_secs(15)).await;
+                tokio::time::sleep(Duration::from_secs(15)).await;
                 continue;
             }
 
             let Ok(payload) = response.json::<serde_json::Value>().await else {
-                tokio_sleep(Duration::from_secs(5)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             };
 
@@ -472,11 +484,6 @@ fn spawn_poller(app: AppHandle) {
     });
 }
 
-async fn tokio_sleep(duration: Duration) {
-    tauri::async_runtime::spawn_blocking(move || std::thread::sleep(duration))
-        .await
-        .ok();
-}
 
 pub fn run() {
     tauri::Builder::default()
