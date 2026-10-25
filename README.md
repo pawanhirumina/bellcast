@@ -119,8 +119,19 @@ Then:
 ```bash
 pnpm install
 pnpm desktop:dev      # development build
-pnpm desktop:build    # deb + AppImage in apps/desktop/src-tauri/target/release/bundle
+pnpm desktop:build    # deb + rpm + AppImage in apps/desktop/src-tauri/target/release/bundle
 ```
+
+### Build on GitHub instead
+
+Compiling Rust locally is optional. The **Desktop build** workflow builds the Linux
+installers on GitHub Actions:
+
+1. Open **Actions → Desktop build → Run workflow** (or push a change under `apps/desktop`).
+2. Download the `bellcast-linux-x86_64` artifact when it finishes.
+3. Extract the zip and install the `.deb` or `.rpm`, or run the `.AppImage`.
+
+Pushing a tag such as `v0.1.0` publishes the same files on a GitHub Release.
 
 The first launch asks for the instance URL and API key, verifies `/api/v1/health`, then
 opens the web UI already signed in. Configuration is stored in
