@@ -1,0 +1,33 @@
+name: Web
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "supabase/**"
+      - "pnpm-lock.yaml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+
+jobs:
+  check:
+    name: Typecheck and build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter web typecheck
+
+      - run: pnpm --filter web build
