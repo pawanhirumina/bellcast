@@ -1,42 +1,126 @@
 @import "tailwindcss";
 @import "@fontsource-variable/geist";
 
-@theme {
+/* Bellcast design tokens. Every colour and font resolves through here. */
+@theme inline {
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", sans-serif;
-  --color-ink: #000000;
-  --color-panel: #0a0a0a;
-  --color-line: #1e1e1e;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas,
+    monospace;
+
+  --color-canvas: var(--bc-canvas);
+  --color-surface: var(--bc-surface);
+  --color-sidebar: var(--bc-sidebar);
+  --color-raised: var(--bc-raised);
+  --color-ink: var(--bc-ink);
+  --color-muted: var(--bc-muted);
+  --color-faint: var(--bc-faint);
+  --color-line: var(--bc-line);
+  --color-line-strong: var(--bc-line-strong);
+  --color-hover: var(--bc-hover);
+  --color-accent: var(--bc-accent);
+  --color-accent-ink: var(--bc-accent-ink);
+  --color-accent-soft: var(--bc-accent-soft);
+  --color-active: var(--bc-active);
+  --color-active-ink: var(--bc-active-ink);
+  --color-code: var(--bc-code);
+  --color-danger: var(--bc-danger);
+  --color-danger-soft: var(--bc-danger-soft);
+  --color-warn: var(--bc-warn);
+  --color-warn-soft: var(--bc-warn-soft);
+  --color-success: var(--bc-success);
+  --color-success-soft: var(--bc-success-soft);
+  --color-mention: var(--bc-mention);
+  --color-focus: var(--bc-focus);
 }
 
 :root {
+  --bc-canvas: #1a1d21;
+  --bc-surface: #1a1d21;
+  --bc-sidebar: #19171d;
+  --bc-raised: #222529;
+  --bc-ink: #d1d2d3;
+  --bc-muted: #9a9b9d;
+  --bc-faint: #767779;
+  --bc-line: #35373b;
+  --bc-line-strong: #4a4d51;
+  --bc-hover: rgba(255, 255, 255, 0.06);
+  --bc-accent: #007a5a;
+  --bc-accent-ink: #ffffff;
+  --bc-accent-soft: rgba(0, 122, 90, 0.16);
+  --bc-active: #1164a3;
+  --bc-active-ink: #ffffff;
+  --bc-code: #121316;
+  --bc-danger: #f97066;
+  --bc-danger-soft: rgba(249, 112, 102, 0.12);
+  --bc-warn: #fdb022;
+  --bc-warn-soft: rgba(253, 176, 34, 0.1);
+  --bc-success: #32d583;
+  --bc-success-soft: rgba(50, 213, 131, 0.1);
+  --bc-mention: rgba(17, 100, 163, 0.18);
+  --bc-focus: #7cc4f4;
   color-scheme: dark;
 }
+
+[data-theme="light"] {
+  --bc-canvas: #ffffff;
+  --bc-surface: #ffffff;
+  --bc-sidebar: #f4f2f6;
+  --bc-raised: #f8f8f8;
+  --bc-ink: #1d1c1d;
+  --bc-muted: #616061;
+  --bc-faint: #868686;
+  --bc-line: #e2e0e4;
+  --bc-line-strong: #cfcdd2;
+  --bc-hover: rgba(29, 28, 29, 0.06);
+  --bc-accent: #611f69;
+  --bc-accent-ink: #ffffff;
+  --bc-accent-soft: #f2e7f3;
+  --bc-active: #1164a3;
+  --bc-active-ink: #ffffff;
+  --bc-code: #f6f6f6;
+  --bc-danger: #b42318;
+  --bc-danger-soft: #fef3f2;
+  --bc-warn: #9a6700;
+  --bc-warn-soft: #fff8e5;
+  --bc-success: #067647;
+  --bc-success-soft: #ecfdf3;
+  --bc-mention: #e8f1fb;
+  --bc-focus: #1164a3;
+  color-scheme: light;
+}
+
 
 html,
 body {
   height: 100%;
+  overflow-x: clip;
 }
 
 body {
-  background: #000;
-  color: #f4f4f5;
+  background: var(--bc-canvas);
+  color: var(--bc-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--bc-accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--bc-focus);
+  outline-offset: 2px;
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  scrollbar-color: var(--bc-line-strong) transparent;
 }
 
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 *::-webkit-scrollbar-track {
@@ -44,28 +128,54 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--bc-line-strong);
   border-radius: 999px;
 }
 
 .bg-grid {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-  background-size: 64px 64px;
+    linear-gradient(var(--bc-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bc-line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  background-position: center;
 }
 
 @keyframes bellcast-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 
 .animate-in {
-  animation: bellcast-in 180ms ease-out both;
+  animation: bellcast-in 160ms ease-out both;
+}
+
+@keyframes bellcast-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.animate-skeleton {
+  animation: bellcast-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -109,14 +109,14 @@ Download the installer for your distro from the
 **Fedora / RHEL:**
 
 ```bash
-sudo dnf install https://github.com/pawanhirumina/bellcast/releases/download/v0.1.0/Bellcast-0.1.0-1.x86_64.rpm
+sudo dnf install https://github.com/pawanhirumina/bellcast/releases/download/v0.2.0/Bellcast-0.2.0-1.x86_64.rpm
 ```
 
 **Debian / Ubuntu:**
 
 ```bash
-curl -LO https://github.com/pawanhirumina/bellcast/releases/download/v0.1.0/Bellcast_0.1.0_amd64.deb
-sudo apt install ./Bellcast_0.1.0_amd64.deb
+curl -LO https://github.com/pawanhirumina/bellcast/releases/download/v0.2.0/Bellcast_0.2.0_amd64.deb
+sudo apt install ./Bellcast_0.2.0_amd64.deb
 ```
 
 Use the `.rpm` or `.deb` package instead of the AppImage.

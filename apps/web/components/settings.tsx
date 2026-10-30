@@ -1,6 +1,7 @@
 "use client";
 
-import { useLiveQuery } from "dexie-react-hooks";
+/* eslint-disable react-hooks/set-state-in-effect -- reads browser-only capabilities after hydration */
+
 import {
   Bell,
   Check,
@@ -8,43 +9,22 @@ import {
   Database,
   HardDrive,
   KeyRound,
-  Loader2,
   LogOut,
+  Palette,
   RefreshCw,
   ShieldCheck,
   Trash2,
+  WifiOff,
 } from "lucide-react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import type { Health } from "@/lib/types";
 import { Button, cn } from "./ui";
+import { ThemeGrid } from "./theme-switcher";
 
-function Row({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-white/[0.05] py-2.5 last:border-b-0">
-      <span className="text-xs text-zinc-500">{label}</span>
-      <span
-        className={cn(
-          "text-right text-xs text-zinc-300",
-          mono && "font-mono text-[11px]",
-        )}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function Card({
+function Section({
   title,
   description,
   icon,
@@ -52,40 +32,69 @@ function Card({
 }: {
   title: string;
   description?: string;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-950/50">
-      <div className="flex items-start gap-3 border-b border-white/[0.06] px-4 py-3.5">
-        <div className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-400">
-          {icon}
-        </div>
+    <section className="border-b border-line py-6 last:border-b-0">
+      <div className="mb-4 flex items-start gap-2.5">
+        {icon ? <span className="mt-0.5 text-muted">{icon}</span> : null}
         <div>
-          <h2 className="text-[13px] font-medium text-zinc-200">{title}</h2>
+          <h2 className="text-[14px] font-bold leading-5 text-ink">{title}</h2>
           {description ? (
-            <p className="mt-0.5 text-[11px] leading-5 text-zinc-500">
+            <p className="mt-1 text-[12px] leading-5 text-muted">
               {description}
             </p>
           ) : null}
         </div>
       </div>
-      <div className="px-4 py-3">{children}</div>
+      <div className="sm:pl-7">{children}</div>
     </section>
+  );
+}
+
+function Row({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-h-10 items-center justify-between gap-4 border-b border-line px-3 py-2.5 last:border-b-0">
+      <span className="text-[12px] font-medium text-muted">{label}</span>
+      <span className="text-right text-[12px] text-ink">{value}</span>
+    </div>
   );
 }
 
 export function SettingsScreen() {
   const [health, setHealth] = useState<Health | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [loadingHealth, setLoadingHealth] = useState(true);
   const [origin, setOrigin] = useState("");
   const [copied, setCopied] = useState(false);
   const [permission, setPermission] = useState<
     NotificationPermission | "unsupported"
   >("default");
   const [busy, setBusy] = useState(false);
-
   const messages = useLiveQuery(() => getDb().messages.count(), [], 0);
   const topics = useLiveQuery(() => getDb().topics.count(), [], 0);
+
+  async function loadHealth() {
+    setLoadingHealth(true);
+    setHealthError(null);
+    try {
+      setHealth(await api.health());
+    } catch {
+      setHealth(null);
+      setHealthError(
+        "Can't reach this instance right now. Cached messages still work.",
+      );
+    } finally {
+      setLoadingHealth(false);
+    }
+  }
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -94,10 +103,7 @@ export function SettingsScreen() {
     } else {
       setPermission(Notification.permission);
     }
-    api
-      .health()
-      .then(setHealth)
-      .catch(() => setHealth(null));
+    void loadHealth();
   }, []);
 
   async function enableNotifications() {
@@ -119,7 +125,10 @@ export function SettingsScreen() {
       window.__BELLCAST__.notify(payload);
       return;
     }
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+    if (
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted"
+    ) {
       new Notification(payload.title, { body: payload.body });
     }
   }
@@ -155,87 +164,97 @@ export function SettingsScreen() {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      // ignore
+      // Ignore clipboard failures.
     }
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6">
-      <div className="mb-6">
-        <h1 className="text-lg font-semibold tracking-tight text-white">
-          Settings
-        </h1>
-        <p className="mt-1 text-xs text-zinc-500">
-          This device and your instance.
-        </p>
-      </div>
-
-      <div className="space-y-3">
-        <Card
-          title="Instance"
-          description="Read-only details from the server."
-          icon={<Database className="h-3.5 w-3.5" />}
+    <div className="min-h-full bg-surface">
+      <div className="mx-auto max-w-3xl px-4 pt-5 sm:px-6">
+        <Section
+          title="Appearance"
+          description="Two themes, applied instantly and remembered on this device."
+          icon={<Palette className="h-4 w-4" />}
         >
-          {health ? (
-            <div>
-              <Row label="Version" value={`v${health.version}`} />
+          <ThemeGrid />
+        </Section>
+
+        <Section
+          title="Instance"
+          description="Details about the self-hosted service behind this workspace."
+          icon={<Database className="h-4 w-4" />}
+        >
+          {loadingHealth ? (
+            <div className="rounded-md border border-line bg-raised px-3 py-3 text-[12px] text-muted">
+              Checking instance…
+            </div>
+          ) : healthError ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-2 rounded-md border border-danger/30 bg-danger-soft px-3 py-2.5 text-[12px] text-danger"
+            >
+              <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1">{healthError}</span>
+              <Button variant="secondary" size="sm" onClick={() => void loadHealth()}>
+                <RefreshCw className="h-3 w-3" aria-hidden />
+                Retry
+              </Button>
+            </div>
+          ) : health ? (
+            <div className="overflow-hidden rounded-md border border-line bg-raised">
+              <Row
+                label="Version"
+                value={<span className="font-mono text-[11px]">v{health.version}</span>}
+              />
               <Row
                 label="Storage"
                 value={
                   health.store === "supabase"
-                    ? "Supabase"
+                    ? "Supabase (Postgres)"
                     : health.store === "file"
                       ? "Local file (dev)"
                       : "Not configured"
                 }
               />
+              <Row label="Retention" value={`${health.retentionDays} days`} />
               <Row
-                label="Retention"
-                value={`${health.retentionDays} days`}
-              />
-              <Row
-                label="Configured"
+                label="Status"
                 value={
                   health.configured ? (
-                    <span className="text-emerald-300">Yes</span>
+                    <span className="inline-flex items-center gap-1.5 text-success">
+                      <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                      Active
+                    </span>
                   ) : (
-                    <span className="text-amber-300">No</span>
+                    <span className="text-warn">Not configured</span>
                   )
                 }
               />
               <Row
                 label="Delivery"
-                value="Authenticated long-poll"
-                mono
+                value={<span className="font-mono text-[11px]">long-poll</span>}
               />
             </div>
-          ) : (
-            <div className="flex items-center gap-2 py-2 text-xs text-zinc-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Checking instance…
-            </div>
-          )}
-        </Card>
+          ) : null}
+        </Section>
 
-        <Card
+        <Section
           title="Notifications"
-          description="Browser notifications appear while this tab is open. The desktop app handles background delivery."
-          icon={<Bell className="h-3.5 w-3.5" />}
+          description="Browser notifications work while this tab is open. The desktop app handles background delivery."
+          icon={<Bell className="h-4 w-4" />}
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-zinc-400">
-              Permission:{" "}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-raised px-3 py-2.5">
+            <div className="text-[12px]">
+              <span className="text-muted">Permission: </span>
               <span
-                className={cn("font-medium", {
-                  "text-emerald-300": permission === "granted",
-                  "text-amber-300": permission === "default",
-                  "text-red-300":
-                    permission === "denied" || permission === "unsupported",
+                className={cn("font-bold capitalize", {
+                  "text-success": permission === "granted",
+                  "text-warn": permission === "default",
+                  "text-danger": permission === "denied",
+                  "text-faint": permission === "unsupported",
                 })}
               >
-                {permission === "unsupported"
-                  ? "Not supported"
-                  : permission}
+                {permission}
               </span>
             </div>
             <div className="flex gap-2">
@@ -243,7 +262,9 @@ export function SettingsScreen() {
                 variant="secondary"
                 size="sm"
                 onClick={enableNotifications}
-                disabled={permission === "granted" || permission === "unsupported"}
+                disabled={
+                  permission === "granted" || permission === "unsupported"
+                }
               >
                 Enable
               </Button>
@@ -257,35 +278,57 @@ export function SettingsScreen() {
               </Button>
             </div>
           </div>
-        </Card>
+        </Section>
 
-        <Card
-          title="Publish from anywhere"
-          description="Use the API key from your Vercel environment. It is never shown in this UI."
-          icon={<KeyRound className="h-3.5 w-3.5" />}
+        <Section
+          title="Publishing"
+          description="Use the API key from your instance environment. It is never shown here."
+          icon={<KeyRound className="h-4 w-4" />}
         >
-          <pre className="overflow-x-auto rounded-lg border border-white/[0.08] bg-black p-3 text-[11px] leading-5 text-zinc-400">
-            {curl}
-          </pre>
-          <div className="mt-3 flex justify-end">
-            <Button variant="secondary" size="sm" onClick={copyCurl}>
-              {copied ? (
-                <Check className="h-3.5 w-3.5" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-              {copied ? "Copied" : "Copy curl"}
-            </Button>
+          <div className="overflow-hidden rounded-md border border-line bg-code">
+            <div className="flex items-center justify-between border-b border-line px-3 py-1.5">
+              <span className="text-[11px] font-semibold text-muted">Bash</span>
+              <button
+                type="button"
+                onClick={copyCurl}
+                className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 text-[11px] font-semibold text-muted hover:bg-hover hover:text-ink"
+              >
+                {copied ? (
+                  <Check className="h-3 w-3 text-success" aria-hidden />
+                ) : (
+                  <Copy className="h-3 w-3" aria-hidden />
+                )}
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <pre className="overflow-x-auto p-3 font-mono text-[11px] leading-6 text-ink">
+              {curl}
+            </pre>
           </div>
-        </Card>
+          <p className="mt-3 text-[11px] leading-5 text-faint">
+            The same payload shape works with Slack and Mattermost incoming
+            webhooks. Point the URL at your hook.
+          </p>
+        </Section>
 
-        <Card
+        <Section
           title="Local cache"
-          description="Messages are cached in IndexedDB on this device for instant loads and offline reading."
-          icon={<HardDrive className="h-3.5 w-3.5" />}
+          description="Messages cached in IndexedDB for instant loads and offline reading."
+          icon={<HardDrive className="h-4 w-4" />}
         >
-          <Row label="Messages" value={messages ?? 0} />
-          <Row label="Topics" value={topics ?? 0} />
+          <div className="overflow-hidden rounded-md border border-line bg-raised">
+            <Row label="Messages cached" value={messages ?? 0} />
+            <Row label="Channels cached" value={topics ?? 0} />
+            <Row
+              label="Offline reads"
+              value={
+                <span className="inline-flex items-center gap-1.5 text-success">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                  Enabled
+                </span>
+              }
+            />
+          </div>
           <div className="mt-3 flex justify-end">
             <Button
               variant="danger"
@@ -293,33 +336,39 @@ export function SettingsScreen() {
               onClick={clearCache}
               disabled={busy}
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
               Clear cache
             </Button>
           </div>
-        </Card>
+        </Section>
 
-        <Card
+        <Section
           title="Session"
-          description="The API key is stored in an HttpOnly cookie. Signing out removes it from this browser."
-          icon={<ShieldCheck className="h-3.5 w-3.5" />}
+          description="The API key is stored in an HttpOnly cookie on this device and is valid for one year."
+          icon={<ShieldCheck className="h-4 w-4" />}
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
-              <RefreshCw className="h-3.5 w-3.5" />
-              Session stays valid for one year.
+          <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-raised px-3 py-2.5">
+            <div className="flex items-center gap-2 text-[12px] text-muted">
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+              Active session
             </div>
-            <Button variant="secondary" size="sm" onClick={signOut} disabled={busy}>
-              <LogOut className="h-3.5 w-3.5" />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={signOut}
+              disabled={busy}
+            >
+              <LogOut className="h-3.5 w-3.5" aria-hidden />
               Sign out
             </Button>
           </div>
-        </Card>
-      </div>
+        </Section>
 
-      <p className="mt-6 text-center text-[11px] text-zinc-700">
-        Bellcast v{health?.version ?? "0.1.0"} · self-hosted
-      </p>
+        <div className="py-8 text-center text-[11px] text-faint">
+          Bellcast v{health?.version ?? "0.1.0"} · self-hosted ·
+          Slack-compatible API
+        </div>
+      </div>
     </div>
   );
 }

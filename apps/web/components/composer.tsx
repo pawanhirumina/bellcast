@@ -2,6 +2,7 @@
 
 import { Loader2, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useOnline } from "@/hooks/use-online";
 import { api, ApiError } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import type { Priority } from "@/lib/types";
@@ -22,6 +23,7 @@ export function Composer({
   defaultTopic: string;
   onClose: () => void;
 }) {
+  const online = useOnline();
   const [topic, setTopic] = useState(defaultTopic);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -43,6 +45,10 @@ export function Composer({
 
   async function send() {
     if (loading) return;
+    if (!online) {
+      setError("You're offline. Reconnect before publishing.");
+      return;
+    }
     if (!body.trim() && !title.trim()) {
       setError("Add a message or a title.");
       return;
@@ -80,10 +86,14 @@ export function Composer({
       }
       onClose();
     } catch (submitError) {
+      if (submitError instanceof ApiError && submitError.status === 401) {
+        window.location.assign("/connect");
+        return;
+      }
       setError(
         submitError instanceof ApiError
           ? submitError.message
-          : "Could not send the notification.",
+          : "Could not send the notification. Check your connection.",
       );
       setLoading(false);
     }
@@ -97,17 +107,26 @@ export function Composer({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/60"
         onClick={onClose}
+        aria-hidden
       />
-      <div className="animate-in relative w-full max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="composer-title"
+        className="animate-in relative flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-line px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-white">
+            <h2
+              id="composer-title"
+              className="text-[14px] font-bold text-ink"
+            >
               New notification
             </h2>
-            <p className="mt-0.5 text-[11px] text-zinc-500">
-              Publish to any topic. New topics are created automatically.
+            <p className="mt-0.5 text-[12px] text-muted">
+              Publish to any channel. New channels are created automatically.
             </p>
           </div>
           <Button
@@ -117,21 +136,40 @@ export function Composer({
             onClick={onClose}
             aria-label="Close"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden />
           </Button>
         </div>
 
-        <form onSubmit={submit} className="space-y-4 p-5">
-          <div>
-            <Label htmlFor="topic">Topic</Label>
-            <Input
-              id="topic"
-              value={topic}
-              onChange={(event) => setTopic(event.target.value)}
-              placeholder="alerts"
-              className="font-mono text-[13px]"
-              spellCheck={false}
-            />
+        <form onSubmit={submit} className="space-y-3.5 overflow-y-auto p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="topic">Channel</Label>
+              <Input
+                id="topic"
+                value={topic}
+                onChange={(event) => setTopic(event.target.value)}
+                placeholder="alerts"
+                className="font-mono text-[12px]"
+                spellCheck={false}
+              />
+            </div>
+            <div>
+              <Label htmlFor="priority">Priority</Label>
+              <select
+                id="priority"
+                value={priority}
+                onChange={(event) =>
+                  setPriority(Number(event.target.value) as Priority)
+                }
+                className="h-9 w-full rounded-md border border-line-strong bg-surface px-2.5 text-[13px] text-ink focus:border-focus focus:outline-none"
+              >
+                {PRIORITIES.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div>
@@ -164,33 +202,14 @@ export function Composer({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="priority">Priority</Label>
-              <select
-                id="priority"
-                value={priority}
-                onChange={(event) =>
-                  setPriority(Number(event.target.value) as Priority)
-                }
-                className="h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-sm text-zinc-200 focus:border-white/25 focus:outline-none"
-              >
-                {PRIORITIES.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <Label htmlFor="tags">Tags (optional)</Label>
-              <Input
-                id="tags"
-                value={tags}
-                onChange={(event) => setTags(event.target.value)}
-                placeholder="backup, success"
-              />
-            </div>
+          <div>
+            <Label htmlFor="tags">Tags (optional)</Label>
+            <Input
+              id="tags"
+              value={tags}
+              onChange={(event) => setTags(event.target.value)}
+              placeholder="backup, success"
+            />
           </div>
 
           <div>
@@ -205,22 +224,25 @@ export function Composer({
           </div>
 
           {error ? (
-            <p className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            <p
+              role="alert"
+              className="rounded-md border border-danger/30 bg-danger-soft px-2.5 py-2 text-[12px] text-danger"
+            >
               {error}
             </p>
           ) : null}
 
-          <div className="flex items-center justify-end gap-2 border-t border-white/[0.08] pt-4">
+          <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || !online}>
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
               ) : (
-                <Send className="h-3.5 w-3.5" />
+                <Send className="h-3.5 w-3.5" aria-hidden />
               )}
-              Send
+              {loading ? "Sending" : "Send"}
             </Button>
           </div>
         </form>

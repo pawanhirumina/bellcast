@@ -1,16 +1,11 @@
-use std::{
-    fs,
-    path::PathBuf,
-    sync::Mutex,
-    time::Duration,
-};
+use std::{fs, path::PathBuf, sync::Mutex, time::Duration, time::SystemTime, time::UNIX_EPOCH};
 
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_notification::NotificationExt;
@@ -103,6 +98,53 @@ fn normalize_url(input: &str) -> Result<String, String> {
     Ok(url.origin().ascii_serialization())
 }
 
+fn credentials(state: &State<'_, AppState>) -> Result<(String, String), String> {
+    let config = state.config.lock().unwrap();
+    if !config.configured() {
+        return Err("Connect this app to an instance first.".into());
+    }
+    Ok((config.instance_url.clone(), config.api_key.clone()))
+}
+
+fn api_error(status: u16, body: &str) -> String {
+    let detail = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(|error| error.get("message"))
+                .and_then(|message| message.as_str())
+                .map(str::to_string)
+        });
+    match status {
+        401 | 403 => "The instance rejected the API key. Open Settings and reconnect.".into(),
+        404 => "That endpoint is missing on this instance.".into(),
+        429 => "The instance is rate limiting requests. Try again shortly.".into(),
+        _ => detail.unwrap_or_else(|| format!("The instance answered with HTTP {status}.")),
+    }
+}
+
+async fn get_json(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+    path: &str,
+) -> Result<serde_json::Value, String> {
+    let response = client
+        .get(format!("{base}{path}"))
+        .header("X-API-Key", key)
+        .send()
+        .await
+        .map_err(|error| format!("Can't reach the instance: {error}"))?;
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(api_error(status.as_u16(), &text));
+    }
+    serde_json::from_str(&text)
+        .map_err(|_| "The instance returned an unexpected response.".to_string())
+}
+
 async fn check_health(client: &reqwest::Client, base: &str) -> Result<(), String> {
     let url = format!("{base}/api/v1/health");
     let response = client
@@ -130,84 +172,21 @@ async fn check_health(client: &reqwest::Client, base: &str) -> Result<(), String
     Ok(())
 }
 
-fn bootstrap_script(instance_url: &str) -> String {
-    let quoted = serde_json::to_string(instance_url).unwrap_or_else(|_| "\"\"".into());
-    format!(
-        r#"(function () {{
-  if (window.__BELLCAST__) return;
-  window.__BELLCAST__ = {{
-    platform: "desktop",
-    instanceUrl: {quoted},
-    openExternal: function (url) {{
-      try {{
-        if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return;
-        window.location.href = "bellcast-open://open?url=" + encodeURIComponent(url);
-      }} catch (error) {{}}
-    }}
-  }};
-}})();"#
-    )
+fn idempotency_key() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    format!("desktop-{nanos}")
 }
 
-fn navigate_to_instance(app: &AppHandle, base: &str, api_key: &str) -> Result<(), String> {
-    let Some(window) = app.get_webview_window("main") else {
-        return Err("The main window is not ready.".into());
-    };
-    let mut url = Url::parse(&format!("{base}/connect"))
-        .map_err(|error| format!("Could not build the connect URL: {error}"))?;
-    url.set_fragment(Some(&format!("key={api_key}")));
-    window
-        .navigate(url)
-        .map_err(|error| format!("Could not open the instance: {error}"))?;
-    window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())?;
-    Ok(())
-}
-
-fn app_home_url() -> Result<Url, String> {
-    // The bundled frontend is served from the `tauri` custom protocol on Linux and
-    // macOS, and from tauri.localhost on Windows.
-    let raw = if cfg!(target_os = "windows") {
-        "http://tauri.localhost/index.html"
-    } else {
-        "tauri://localhost/index.html"
-    };
-    Url::parse(raw).map_err(|error| format!("Could not build the onboarding URL: {error}"))
-}
-
-fn show_onboarding(app: &AppHandle) -> Result<(), String> {
-    let Some(window) = app.get_webview_window("main") else {
-        return Err("The main window is not ready.".into());
-    };
-    let url = app_home_url()?;
-    window
-        .navigate(url)
-        .map_err(|error| error.to_string())?;
-    window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())?;
-    Ok(())
-}
-
-fn build_window(app: &AppHandle, config: &Config) -> Result<(), String> {
-    let (url, script) = if config.configured() {
-        let mut connect = Url::parse(&format!("{}/connect", config.instance_url))
-            .map_err(|error| error.to_string())?;
-        connect.set_fragment(Some(&format!("key={}", config.api_key)));
-        (
-            WebviewUrl::External(connect),
-            Some(bootstrap_script(&config.instance_url)),
-        )
-    } else {
-        (WebviewUrl::App("index.html".into()), None)
-    };
-
-    let instance_origin = config.instance_url.clone();
+fn build_window(app: &AppHandle) -> Result<(), String> {
     let handle = app.clone();
 
-    let mut builder = WebviewWindowBuilder::new(app, "main", url)
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Bellcast")
         .inner_size(1120.0, 760.0)
-        .min_inner_size(780.0, 520.0)
+        .min_inner_size(760.0, 520.0)
         .center()
         .visible(false)
         .on_navigation(move |target| {
@@ -221,20 +200,13 @@ fn build_window(app: &AppHandle, config: &Config) -> Result<(), String> {
                 return false;
             }
 
-            if instance_origin.is_empty() {
-                return true;
-            }
-
+            // The bundled UI is the only page this window may load. External
+            // links open in the system browser through the opener plugin.
             let origin = target.origin().ascii_serialization();
-            origin == instance_origin
-                || target.scheme() == "tauri"
+            target.scheme() == "tauri"
                 || origin == "http://tauri.localhost"
                 || origin == "https://tauri.localhost"
         });
-
-    if let Some(script) = script {
-        builder = builder.initialization_script(script);
-    }
 
     let window = builder.build().map_err(|error| error.to_string())?;
 
@@ -286,6 +258,15 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 } else {
                     "Pause notifications"
                 });
+                emit_status(
+                    app,
+                    if paused { "paused" } else { "live" },
+                    if paused {
+                        Some("Notifications are paused.".to_string())
+                    } else {
+                        None
+                    },
+                );
             }
             "quit" => app.exit(0),
             _ => {}
@@ -314,6 +295,13 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+fn emit_status(app: &AppHandle, status: &str, message: Option<String>) {
+    let _ = app.emit(
+        "bellcast://status",
+        serde_json::json!({ "status": status, "message": message }),
+    );
+}
+
 fn notify(app: &AppHandle, title: &str, body: &str) {
     let mut builder = app.notification().builder().title(title);
     if !body.is_empty() {
@@ -330,7 +318,7 @@ async fn save_config(
     state: State<'_, AppState>,
     instance_url: String,
     api_key: String,
-) -> Result<(), String> {
+) -> Result<PublicConfig, String> {
     let base = normalize_url(&instance_url)?;
     let key = api_key.trim().to_string();
     if key.is_empty() {
@@ -352,7 +340,13 @@ async fn save_config(
         eprintln!("[bellcast] could not enable autostart: {error}");
     }
 
-    navigate_to_instance(&app, &base, &key)
+    emit_status(&app, "connecting", None);
+
+    Ok(PublicConfig {
+        instance_url: base,
+        has_key: true,
+        paused: false,
+    })
 }
 
 #[tauri::command]
@@ -366,10 +360,148 @@ fn get_config(state: State<'_, AppState>) -> PublicConfig {
 }
 
 #[tauri::command]
+async fn health(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let base = {
+        let config = state.config.lock().unwrap();
+        config.instance_url.clone()
+    };
+    if base.is_empty() {
+        return Err("No instance configured yet.".into());
+    }
+    let response = state
+        .client
+        .get(format!("{base}/api/v1/health"))
+        .send()
+        .await
+        .map_err(|error| format!("Can't reach the instance: {error}"))?;
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(api_error(status.as_u16(), &text));
+    }
+    serde_json::from_str(&text)
+        .map_err(|_| "The instance returned an unexpected response.".to_string())
+}
+
+#[tauri::command]
+async fn fetch_topics(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let (base, key) = credentials(&state)?;
+    get_json(&state.client, &base, &key, "/api/v1/topics").await
+}
+
+#[tauri::command]
+async fn fetch_messages(
+    state: State<'_, AppState>,
+    topic: Option<String>,
+    before: Option<i64>,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let (base, key) = credentials(&state)?;
+    let mut url = Url::parse(&format!("{base}/api/v1/messages"))
+        .map_err(|_| "The instance URL is not valid.".to_string())?;
+    {
+        let mut query = url.query_pairs_mut();
+        if let Some(topic) = topic.filter(|value| !value.is_empty()) {
+            query.append_pair("topic", &topic);
+        }
+        if let Some(before) = before {
+            query.append_pair("before", &before.to_string());
+        }
+        query.append_pair("limit", &limit.unwrap_or(100).to_string());
+    }
+    let path = format!(
+        "{}{}",
+        url.path(),
+        url.query().map(|value| format!("?{value}")).unwrap_or_default()
+    );
+    get_json(&state.client, &base, &key, &path).await
+}
+
+#[tauri::command]
+async fn publish_message(
+    state: State<'_, AppState>,
+    topic: String,
+    body: String,
+    title: Option<String>,
+    priority: Option<i64>,
+    tags: Option<Vec<String>>,
+    click: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let (base, key) = credentials(&state)?;
+    let payload = serde_json::json!({
+        "title": title.filter(|value| !value.trim().is_empty()),
+        "body": body,
+        "priority": priority.unwrap_or(3),
+        "tags": tags.unwrap_or_default(),
+        "click": click.filter(|value| !value.trim().is_empty()),
+    });
+    let url = format!(
+        "{base}/api/v1/publish/{}",
+        urlencoding(&topic.to_ascii_lowercase())
+    );
+    let response = state
+        .client
+        .post(url)
+        .header("X-API-Key", &key)
+        .header("Idempotency-Key", idempotency_key())
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|error| format!("Can't reach the instance: {error}"))?;
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(api_error(status.as_u16(), &text));
+    }
+    serde_json::from_str(&text)
+        .map_err(|_| "The instance returned an unexpected response.".to_string())
+}
+
+#[tauri::command]
+async fn delete_message(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let (base, key) = credentials(&state)?;
+    let url = format!("{base}/api/v1/messages/{}", urlencoding(&id));
+    let response = state
+        .client
+        .delete(url)
+        .header("X-API-Key", &key)
+        .send()
+        .await
+        .map_err(|error| format!("Can't reach the instance: {error}"))?;
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(api_error(status.as_u16(), &text));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_cursor(app: AppHandle, state: State<'_, AppState>, seq: i64) -> Result<(), String> {
+    let mut config = state.config.lock().unwrap();
+    if seq > config.last_seq {
+        config.last_seq = seq;
+        save_config_file(&app, &config)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn set_paused(app: AppHandle, state: State<'_, AppState>, paused: bool) -> Result<(), String> {
     let mut config = state.config.lock().unwrap();
     config.paused = paused;
-    save_config_file(&app, &config)
+    save_config_file(&app, &config)?;
+    drop(config);
+    emit_status(
+        &app,
+        if paused { "paused" } else { "live" },
+        if paused {
+            Some("Notifications are paused.".to_string())
+        } else {
+            None
+        },
+    );
+    Ok(())
 }
 
 #[tauri::command]
@@ -379,11 +511,36 @@ fn reset_instance(app: AppHandle, state: State<'_, AppState>) -> Result<(), Stri
         *config = Config::default();
         save_config_file(&app, &config)?;
     }
-    show_onboarding(&app)
+    emit_status(&app, "unconfigured", None);
+    Ok(())
+}
+
+#[tauri::command]
+fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("Only http(s) links can be opened.".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+fn urlencoding(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
 }
 
 fn spawn_poller(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        emit_status(&app, "connecting", None);
+
         loop {
             let (base, key, since, paused, configured) = {
                 let state = app.state::<AppState>();
@@ -397,7 +554,14 @@ fn spawn_poller(app: AppHandle) {
                 )
             };
 
-            if !configured || paused {
+            if !configured {
+                emit_status(&app, "unconfigured", None);
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                continue;
+            }
+
+            if paused {
+                emit_status(&app, "paused", Some("Notifications are paused.".into()));
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 continue;
             }
@@ -415,20 +579,49 @@ fn spawn_poller(app: AppHandle) {
                 .await;
 
             let Ok(response) = response else {
+                emit_status(
+                    &app,
+                    "offline",
+                    Some("Can't reach your instance. Retrying in the background.".into()),
+                );
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             };
 
             if !response.status().is_success() {
-                // Bad key, missing instance or a transient upstream error.
+                let status = response.status().as_u16();
+                emit_status(
+                    &app,
+                    if status == 401 || status == 403 {
+                        "unauthorized"
+                    } else {
+                        "error"
+                    },
+                    Some(api_error(status, "")),
+                );
                 tokio::time::sleep(Duration::from_secs(15)).await;
                 continue;
             }
 
             let Ok(payload) = response.json::<serde_json::Value>().await else {
+                emit_status(
+                    &app,
+                    "error",
+                    Some("The instance returned an unexpected response.".into()),
+                );
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             };
+
+            if payload.get("reset").and_then(|value| value.as_bool()) == Some(true) {
+                let state = app.state::<AppState>();
+                let mut config = state.config.lock().unwrap();
+                config.last_seq = 0;
+                let _ = save_config_file(&app, &config);
+                emit_status(&app, "live", None);
+                let _ = app.emit("bellcast://reset", ());
+                continue;
+            }
 
             let messages = payload
                 .get("messages")
@@ -436,16 +629,12 @@ fn spawn_poller(app: AppHandle) {
                 .cloned()
                 .unwrap_or_default();
 
-            if messages.is_empty() {
-                continue;
-            }
-
+            let mut newest = since;
             let focused = app
                 .get_webview_window("main")
                 .map(|window| window.is_focused().unwrap_or(false))
                 .unwrap_or(false);
 
-            let mut newest = since;
             for message in &messages {
                 let seq = message
                     .get("seq")
@@ -480,10 +669,15 @@ fn spawn_poller(app: AppHandle) {
                 config.last_seq = newest;
                 let _ = save_config_file(&app, &config);
             }
+
+            emit_status(&app, "live", None);
+
+            if !messages.is_empty() {
+                let _ = app.emit("bellcast://messages", messages);
+            }
         }
     });
 }
-
 
 pub fn run() {
     tauri::Builder::default()
@@ -503,8 +697,15 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             save_config,
             get_config,
+            health,
+            fetch_topics,
+            fetch_messages,
+            publish_message,
+            delete_message,
+            set_cursor,
             set_paused,
-            reset_instance
+            reset_instance,
+            open_url
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -515,11 +716,11 @@ pub fn run() {
                 .build()?;
 
             app.manage(AppState {
-                config: Mutex::new(config.clone()),
+                config: Mutex::new(config),
                 client,
             });
 
-            build_window(&handle, &config)?;
+            build_window(&handle)?;
             build_tray(&handle)?;
             spawn_poller(handle);
             Ok(())

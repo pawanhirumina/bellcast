@@ -1,7 +1,10 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- browser-only initialisation */
+
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -11,17 +14,22 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import type { Message } from "@/lib/types";
+import { useOnline } from "@/hooks/use-online";
 
-type SyncStatus = "connecting" | "live" | "error";
+export type SyncStatus = "connecting" | "live" | "offline" | "error";
 
 type SyncContextValue = {
   status: SyncStatus;
   cursor: number;
+  error: string | null;
+  retry: () => void;
 };
 
 const SyncContext = createContext<SyncContextValue>({
   status: "connecting",
   cursor: 0,
+  error: null,
+  retry: () => undefined,
 });
 
 export function useSync() {
@@ -30,6 +38,14 @@ export function useSync() {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function describeError(error: unknown) {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof TypeError) {
+    return "Can't reach your instance. Check your connection and try again.";
+  }
+  return "Live updates stopped after an unexpected error.";
 }
 
 function showNotifications(messages: Message[]) {
@@ -61,13 +77,30 @@ function showNotifications(messages: Message[]) {
 }
 
 export function SyncProvider({ children }: { children: ReactNode }) {
+  const online = useOnline();
   const [status, setStatus] = useState<SyncStatus>("connecting");
   const [cursor, setCursor] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  const retry = useCallback(() => {
+    setError(null);
+    setAttempt((value) => value + 1);
+  }, []);
 
   useEffect(() => {
+    if (!online) {
+      setStatus("offline");
+      setError("This device is offline. Showing messages saved on it.");
+      return;
+    }
+
     const db = getDb();
     let stopped = false;
     let controller: AbortController | null = null;
+
+    setStatus("connecting");
+    setError(null);
 
     async function bootstrap() {
       const [topics, page] = await Promise.all([
@@ -155,27 +188,39 @@ export function SyncProvider({ children }: { children: ReactNode }) {
               setCursor(since);
             }
             setStatus("live");
-          } catch (error) {
+            setError(null);
+          } catch (caught) {
             if (stopped) return;
-            if (error instanceof ApiError && error.status === 401) {
+            if (caught instanceof ApiError && caught.status === 401) {
               window.location.assign("/connect");
               return;
             }
-            if (error instanceof DOMException && error.name === "AbortError") {
+            if (caught instanceof DOMException && caught.name === "AbortError") {
               return;
             }
-            setStatus("error");
-            await sleep(2000);
+            const reachable = window.navigator.onLine;
+            setStatus(reachable ? "error" : "offline");
+            setError(
+              reachable
+                ? describeError(caught)
+                : "This device is offline. Showing messages saved on it.",
+            );
+            await sleep(2500);
           }
         }
-      } catch (error) {
+      } catch (caught) {
         if (stopped) return;
-        if (error instanceof ApiError && error.status === 401) {
+        if (caught instanceof ApiError && caught.status === 401) {
           window.location.assign("/connect");
           return;
         }
-        console.error("[bellcast] sync bootstrap failed", error);
-        setStatus("error");
+        console.error("[bellcast] sync bootstrap failed", caught);
+        setStatus(window.navigator.onLine ? "error" : "offline");
+        setError(
+          window.navigator.onLine
+            ? describeError(caught)
+            : "This device is offline. Showing messages saved on it.",
+        );
       }
     }
 
@@ -185,9 +230,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       stopped = true;
       controller?.abort();
     };
-  }, []);
+  }, [attempt, online]);
 
-  const value = useMemo(() => ({ status, cursor }), [status, cursor]);
+  const value = useMemo(
+    () => ({ status, cursor, error, retry }),
+    [status, cursor, error, retry],
+  );
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
 }

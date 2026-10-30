@@ -1,11 +1,11 @@
 "use client";
 
 import { useLiveQuery } from "dexie-react-hooks";
-import { Check, Copy, Menu, Plus } from "lucide-react";
-import { useState } from "react";
+import { Menu, Plus, Search, X } from "lucide-react";
+import { useEffect } from "react";
 import { getDb } from "@/lib/db";
-import { useSync } from "./sync-provider";
-import { Button, cn } from "./ui";
+import { useSearch } from "./search-provider";
+import { Button } from "./ui";
 
 export function Topbar({
   topic,
@@ -18,8 +18,11 @@ export function Topbar({
   onMenu: () => void;
   onCompose: () => void;
 }) {
-  const { status } = useSync();
-  const [copied, setCopied] = useState(false);
+  const { query, setQuery } = useSearch();
+
+  useEffect(() => {
+    setQuery("");
+  }, [topic, isSettings, setQuery]);
 
   const count = useLiveQuery(
     async () => {
@@ -32,104 +35,97 @@ export function Topbar({
     0,
   );
 
-  async function copyCurl() {
-    const target = topic ?? "general";
-    const command = [
-      `curl -X POST ${window.location.origin}/api/v1/publish/${target} \\`,
-      `  -H "X-API-Key: YOUR_API_KEY" \\`,
-      `  -H "Title: Hello from Bellcast" \\`,
-      `  -d "It works."`,
-    ].join("\n");
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      // clipboard can be unavailable on http:// origins
-    }
-  }
-
   const title = isSettings
-    ? "Settings"
+    ? "Preferences"
     : topic
       ? `#${topic}`
-      : "All messages";
+      : "Activity";
+  const subtitle = isSettings
+    ? "Workspace, notifications and local cache"
+    : topic
+      ? "Everything published to this channel"
+      : "Every notification across your channels";
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] bg-black/80 px-4 backdrop-blur-xl sm:px-6">
-      <div className="flex min-w-0 items-center gap-2.5">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden"
-          onClick={onMenu}
-          aria-label="Open topics"
-        >
-          <Menu className="h-4 w-4" />
-        </Button>
-        <div className="min-w-0">
-          <h1 className="truncate text-[15px] font-semibold tracking-tight text-white">
-            {title}
-          </h1>
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-3 sm:px-4">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="md:hidden"
+        onClick={onMenu}
+        aria-label="Open channels"
+      >
+        <Menu className="h-4 w-4" aria-hidden />
+      </Button>
+
+      <div className="min-w-0 shrink">
+        <h1 className="truncate text-[15px] font-bold leading-tight text-ink">
+          {topic ? <span className="text-muted">#</span> : null}
+          {topic ?? title}
+        </h1>
+        <p className="hidden truncate text-[11px] leading-tight text-muted sm:block">
+          {subtitle}
           {!isSettings ? (
-            <p className="text-[11px] text-zinc-600">
-              {count ?? 0} notification{count === 1 ? "" : "s"}
-            </p>
+            <span className="text-faint">
+              {" "}
+              · {count ?? 0} message{count === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </p>
+      </div>
+
+      {!isSettings ? (
+        <div className="relative ml-auto hidden w-full max-w-xs items-center md:flex">
+          <Search
+            className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-faint"
+            aria-hidden
+          />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search messages"
+            aria-label="Search messages"
+            className="h-8 w-full rounded-md border border-line-strong bg-surface pl-8 pr-8 text-[13px] text-ink placeholder:text-faint focus:border-focus focus:outline-none"
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute right-1 rounded p-1 text-muted hover:bg-hover hover:text-ink"
+            >
+              <X className="h-3 w-3" aria-hidden />
+            </button>
           ) : null}
         </div>
-      </div>
+      ) : (
+        <div className="ml-auto" />
+      )}
 
-      <div className="flex items-center gap-2">
-        <div
-          className={cn(
-            "hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] sm:flex",
-            {
-              "border-emerald-500/20 bg-emerald-500/10 text-emerald-300":
-                status === "live",
-              "border-amber-500/20 bg-amber-500/10 text-amber-300":
-                status === "connecting",
-              "border-red-500/20 bg-red-500/10 text-red-300": status === "error",
-            },
-          )}
-        >
-          <span
-            className={cn("h-1.5 w-1.5 rounded-full", {
-              "bg-emerald-400": status === "live",
-              "bg-amber-400": status === "connecting",
-              "bg-red-400": status === "error",
-            })}
-          />
-          {status === "live"
-            ? "Connected"
-            : status === "error"
-              ? "Reconnecting"
-              : "Connecting"}
-        </div>
-
+      <div className="flex items-center gap-1">
         {!isSettings ? (
-          <>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={copyCurl}
-              title="Copy a curl command"
-            >
-              {copied ? (
-                <Check className="h-3.5 w-3.5" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-              <span className="hidden sm:inline">
-                {copied ? "Copied" : "Copy curl"}
-              </span>
-            </Button>
-            <Button size="sm" onClick={onCompose}>
-              <Plus className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">New</span>
-            </Button>
-          </>
+          <Button size="sm" onClick={onCompose}>
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            <span className="hidden sm:inline">New</span>
+          </Button>
         ) : null}
       </div>
+
+      {!isSettings ? (
+        <div className="relative flex w-full items-center md:hidden">
+          <Search
+            className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-faint"
+            aria-hidden
+          />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search"
+            aria-label="Search messages"
+            className="h-8 w-full rounded-md border border-line-strong bg-surface pl-8 pr-3 text-[13px] text-ink placeholder:text-faint focus:border-focus focus:outline-none"
+          />
+        </div>
+      ) : null}
     </header>
   );
 }

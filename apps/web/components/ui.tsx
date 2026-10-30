@@ -23,16 +23,16 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 disabled:pointer-events-none disabled:opacity-50",
+        "inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:pointer-events-none disabled:opacity-50",
         {
-          "bg-white text-black hover:bg-zinc-200": variant === "primary",
-          "border border-white/10 bg-white/[0.03] text-zinc-200 hover:border-white/20 hover:bg-white/[0.06]":
+          "bg-accent text-accent-ink hover:opacity-90": variant === "primary",
+          "border border-line-strong bg-surface text-ink hover:bg-hover":
             variant === "secondary",
-          "text-zinc-400 hover:bg-white/5 hover:text-white": variant === "ghost",
-          "border border-red-500/25 bg-red-500/10 text-red-300 hover:bg-red-500/20":
+          "text-muted hover:bg-hover hover:text-ink": variant === "ghost",
+          "border border-danger/40 bg-danger-soft text-danger hover:bg-danger/15":
             variant === "danger",
-          "h-8 px-3 text-xs": size === "sm",
-          "h-9 px-4 text-sm": size === "md",
+          "h-8 px-3 text-[12px]": size === "sm",
+          "h-9 px-3.5 text-[13px]": size === "md",
           "h-9 w-9": size === "icon",
         },
         className,
@@ -49,7 +49,7 @@ export function Input({
   return (
     <input
       className={cn(
-        "h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-white/25 focus:outline-none focus:ring-2 focus:ring-white/10",
+        "h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-[13px] text-ink placeholder:text-faint transition-colors focus:border-focus focus:outline-none",
         className,
       )}
       {...props}
@@ -66,7 +66,7 @@ export function Textarea({
   return (
     <textarea
       className={cn(
-        "w-full rounded-lg border border-white/10 bg-black px-3 py-2.5 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:border-white/25 focus:outline-none focus:ring-2 focus:ring-white/10",
+        "w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-[14px] leading-6 text-ink placeholder:text-faint transition-colors focus:border-focus focus:outline-none",
         className,
       )}
       {...props}
@@ -81,7 +81,7 @@ export function Label({
 }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return (
     <label
-      className={cn("mb-1.5 block text-xs font-medium text-zinc-400", className)}
+      className={cn("mb-1.5 block text-[12px] font-medium text-muted", className)}
       {...props}
     >
       {children}

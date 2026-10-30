@@ -92,7 +92,13 @@ export async function POST(req: NextRequest, context: Context) {
     title = normalized;
   }
 
-  const priority = parsePriority(req.headers.get("priority") ?? payload.priority);
+  // Browsers may attach their own `Priority` header (RFC 9218), e.g. `u=3`.
+  // Only honour the header when it is a valid value, otherwise fall back to
+  // the JSON body so web requests are not rejected by transport metadata.
+  const priorityHeader = req.headers.get("priority");
+  const priority =
+    (priorityHeader !== null ? parsePriority(priorityHeader) : null) ??
+    parsePriority(payload.priority);
   if (priority === null) {
     return fail(
       400,
