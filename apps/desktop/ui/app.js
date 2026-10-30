@@ -961,7 +961,7 @@ function renderOnboarding() {
         </form>
         <p class="form-hint">The app checks <span style="font-family:var(--font-mono)">/api/v1/health</span> before saving. Keys are stored locally, never in the webview.</p>
         <div class="onboard-footer">
-          <span>Bellcast Desktop v0.2.0</span>
+          <span>Bellcast Desktop v0.2.1</span>
           <div class="theme-strip" role="group" aria-label="Theme">${themeButtons}</div>
         </div>
       </div>
@@ -1572,7 +1572,7 @@ function renderSettings() {
       </div>
     </div>
 
-    <p class="note" style="text-align:center;padding:8px 0 0">Bellcast Desktop v0.2.0 · self-hosted · API key stored locally</p>
+    <p class="note" style="text-align:center;padding:8px 0 0">Bellcast Desktop v0.2.1 · self-hosted · API key stored locally</p>
   </div></div>`;
 }
 

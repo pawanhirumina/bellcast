@@ -3,12 +3,23 @@
 Self-hosted push notifications you actually own. One API key, one instance, no accounts,
 no third-party push service.
 
-- **Web** — Next.js on Vercel, dark inbox UI, offline cache, browser notifications.
+- **Web** — Next.js on Vercel, Slack-style inbox UI, light/dark themes, offline cache,
+  browser notifications.
 - **API** — one key, authenticated long-polling, idempotent publish, topics without setup.
-- **Desktop** — Tauri v2 tray app that loads the same web UI and delivers notifications in
-  the background on Linux, macOS and Windows.
+- **Desktop** — Tauri v2 tray app with its own bundled UI and native notifications on Linux,
+  macOS and Windows.
 
 The full design is in [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+## What's new in 0.2.0
+
+- Slack-style web UI: channel sidebar, day dividers, hover actions, composer, search and settings.
+- Light and dark themes, applied instantly and remembered per device.
+- Multi-select messages with select-all and bulk delete behind a confirmation dialog.
+- Desktop app ships its own bundled UI instead of loading the remote web app, and keeps
+  long-poll notifications running in the background.
+- Publish ignores browser-provided RFC 9218 `Priority` headers so JSON bodies validate.
+- Schema is unchanged: redeploy the web app and update the desktop client.
 
 ## Repo layout
 
@@ -97,8 +108,8 @@ automatic cleanup.
 
 ## Desktop app
 
-The desktop shell loads your deployed instance (or `http://localhost:3000` while
-developing). It keeps a tray icon, polls the API in the background and fires native
+The desktop app is a Tauri tray client with its own bundled Slack-style UI — it does not load
+your deployed instance in a webview. It polls the API in the background and fires native
 notifications even when the window is hidden.
 
 ### Install
@@ -165,7 +176,7 @@ pnpm desktop:build    # deb + rpm + AppImage in apps/desktop/src-tauri/target/re
 ```
 
 The first launch asks for the instance URL and API key, verifies `/api/v1/health`, then
-opens the web UI already signed in. Configuration is stored in
+opens the bundled inbox already signed in. Configuration is stored in
 `~/.config/app.bellcast.desktop/config.json` with owner-only permissions.
 
 **v1 limitation:** the key is stored in that file, not the OS keychain. Keychain storage is
@@ -186,6 +197,12 @@ planned.
 
 Publishing accepts JSON or plain text. `Title`, `Priority` (`min`…`max` or `1`–`5`), `Tags`
 and `Click` also work as headers, and `Idempotency-Key` makes retries safe per topic.
+
+## Versioning
+
+Bellcast uses [SemVer](https://semver.org). Releases are `0.x` while the API is pre-stable:
+breaking changes bump the minor version (`0.1` → `0.2`), fixes bump the patch version.
+`1.0.0` will mark the first stable API.
 
 ## License
 

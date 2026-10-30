@@ -712,7 +712,7 @@ pub fn run() {
             let config = load_config(&handle);
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(40))
-                .user_agent("Bellcast Desktop/0.1")
+                .user_agent("Bellcast Desktop/0.2")
                 .build()?;
 
             app.manage(AppState {

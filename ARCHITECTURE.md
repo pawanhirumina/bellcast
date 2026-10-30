@@ -1,7 +1,7 @@
 # Bellcast — Architecture
 
-Status: design draft, pre-build
-Last updated: 2026-10-25
+Status: design notes for the shipped v0.2.0 release
+Last updated: 2026-10-30
 
 ## 1. Decisions
 
@@ -11,7 +11,7 @@ Last updated: 2026-10-25
 | Hosting | Next.js on Vercel, Postgres on Supabase. |
 | ntfy compatibility | **Not a goal.** Own API, own semantics. |
 | Web app | Next.js App Router. The product UI lives at `/app`. |
-| Desktop | Tauri v2 wrapper for Windows, macOS, Linux that loads the deployed web UI. No duplicated UI. |
+| Desktop | Tauri v2 client with a bundled Slack-style UI; the Rust backend calls the API directly. |
 | Landing/docs | Stays in the separate `bellcast-landing` repo. Not merged. |
 | Realtime transport | Authenticated long-polling through the Next API (recommended). No Supabase client in the browser. |
 | Background delivery | Desktop app runs in the tray/at login. Web notifications only while a tab is open. |
@@ -30,15 +30,21 @@ This is the single biggest simplification in the project. Protect it.
 ## 2. System overview
 
 ```
-                 ┌──────────────────────────────┐
+                  ┌──────────────────────────────┐
   curl / CI ────▶│  Next.js on Vercel           │
-                 │  /api/v1/publish/{topic}     │──┐
-                 │  /api/v1/sync (long-poll)    │  │ service_role
-                 │  /api/v1/session             │  ▼
+                  │  /api/v1/publish/{topic}     │──┐
+                  │  /api/v1/sync (long-poll)    │  │ service_role
+                  │  /api/v1/session             │  ▼
   Browser ──────▶│  /app (React)                │┌─────────────┐
-                 └──────────────────────────────┘│  Supabase   │
-                                                 │  Postgres   │
-  Tauri ────────▶ loads https://instance/app     └─────────────┘
+                  └──────────────────────────────┘│  Supabase   │
+                                                   │  Postgres   │
+   Tauri ────────▶ bundled UI (apps/desktop/ui) ─▶ /api/v1/sync (long-poll)
+                                                   │
+                                                   ▼
+                                          Next.js on Vercel
+                                                   │
+                                                   ▼
+                                          Supabase Postgres
 ```
 
 - **Vercel** is both the UI host and the only API surface.
@@ -85,9 +91,11 @@ POST /api/v1/session   { "key": "..." }
 - Rotating the env key invalidates every existing session immediately.
 - No users table, no passwords, no OAuth.
 
-The desktop app opens `/connect#key=<key>` so the web UI can exchange the key for the
-cookie without the user pasting it twice. The fragment stays in the webview. The Rust
-poller keeps its own copy of the key for background delivery (see §8).
+The desktop app stores the instance URL and API key locally and uses them for its own bundled UI.
+The web sign-in screen accepts a connect link (`/connect#key=…`) so a browser can be signed in
+without typing the key; the fragment is removed from the address bar immediately and never leaves
+the client. The desktop's Rust poller keeps its own copy of the key for background delivery (see
+§8).
 
 ---
 
@@ -327,40 +335,64 @@ notifications and removes the entire client-side Supabase auth problem.
 
 ## 7. Web app
 
-Next.js App Router, Tailwind/shadcn, dark by default, design tokens aligned with the landing
-page.
+Next.js App Router, Tailwind/shadcn, design tokens aligned with the same Bellcast palette used by
+the web inbox and the bundled desktop UI, dark by default with a light theme.
 
 | Route | Purpose |
 |---|---|
 | `/` | Redirect to `/app` or `/connect` |
 | `/connect` | Paste API key, verify, set cookie |
-| `/app` | Main shell |
-| `/app/t/[topic]` | Topic view |
-| `/app/settings` | Notifications, cache, sign out, health, curl snippet |
+| `/app` | Main Slack-style shell: sidebar, inbox, top bar, composer, search, settings |
+| `/app/settings` | Appearance, instance, notifications, publishing, cache, session |
 
-Layout: topic sidebar + message list + optional detail pane. Responsive down to a single
-pane. Message body is rendered as **plain text** in v1 (no markdown, no
-`dangerouslySetInnerHTML`).
+Layout: Slack-style rows in a channel sidebar plus the main inbox. Channels and the Activity feed
+use day dividers, hover actions and unread counts. Message bodies are **plain text** in v0.2.0
+(no markdown, no `dangerouslySetInnerHTML`).
 
 Actions:
 
-- **New** — compose/test notification (topic, title, body, priority, tags, click).
+- **New** — publish a notification from the built-in composer to a channel, topic, title, body,
+  priority, tags, click or action buttons.
 - **Copy curl** — generates a working publish command for the current topic.
-- **Notification permission** — browser notification while the tab is open.
+- **Notification permission** — browser notification while the tab is open; desktop handles
+  background delivery.
 - **Clear cache**, **Sign out**.
+- **Select** — multi-select messages, select-all and bulk delete behind a confirmation dialog.
 
 Server rendering is limited to the shell and API. Message data is client-side only; this is
-also what makes the desktop wrapper trivial.
+also what makes the desktop bundle straightforward.
 
 State: Dexie as source of truth + `useLiveQuery`; a small Zustand store for UI state; no
 TanStack Query needed.
 
 ---
 
+## 7.5 Design tokens and v0.2.0 themes
+
+The web app and the desktop app share the same design-token names and values, so both UIs switch
+between the Bellcast dark and light themes without drift.
+
+| Token | Dark | Light |
+|---|---:|---:|
+| canvas / surface | `#1a1d21` | `#ffffff` |
+| sidebar | `#19171d` | `#f4f2f6` |
+| raised / card | `#222529` | `#f8f8f8` |
+| ink | `#d1d2d3` | `#1d1c1d` |
+| muted | `#9a9b9d` | `#616061` |
+| line | `#35373b` | `#e2e0e4` |
+| accent | `#007a5a` | `#611f69` |
+
+The accent swaps from green to aubergine between themes, the ink and surface swap between near
+black and white, and success, warn, danger and focus colours use the same values in both themes.
+
+---
+
 ## 8. Desktop app (Tauri v2)
 
-The desktop app is a Rust shell around the deployed web UI. It does not bundle a second
-frontend.
+The desktop app is a Tauri v2 client with its own locally bundled Slack-style frontend, in
+`apps/desktop/ui`. The Rust backend talks to the instance API directly; the frontend keeps its
+own connection state, validates it against `/api/v1/health` and long-polls `/api/v1/sync` with
+the API key.
 
 ### Lifecycle
 
@@ -368,10 +400,8 @@ frontend.
    Rust validates them with `GET /api/v1/health` before writing anything.
 2. Store both in `config.json` under the app config directory (owner-only permissions in
    v1; OS keychain is a follow-up). Enable start at login.
-3. Open `/connect#key=<key>` in the main window. The web app POSTs the key to
-   `/api/v1/session`, gets the HttpOnly cookie and redirects to `/app`. The fragment is
-   removed from the address bar immediately and never leaves the webview.
-4. Inject a tiny bootstrap global before the page loads:
+3. Open the bundled `index.html` page in the main window. The bundled UI sends the stored API
+   key to the health check and the sync loop; it never asks a remote page for the key.
 
    ```js
    window.__BELLCAST__ = {
@@ -381,9 +411,9 @@ frontend.
    };
    ```
 
-   `notify` is intentionally absent: native notifications come from Rust, so remote pages
-   need no Tauri IPC or runtime capability at all.
-5. Start the background poller. It long-polls `/api/v1/sync` with `X-API-Key`, persists the
+   `notify` is intentionally absent: native notifications come from Rust, so the bundled UI needs
+   no Tauri IPC or runtime capability at all.
+4. Start the background poller. It long-polls `/api/v1/sync` with `X-API-Key`, persists the
    cursor, and raises a native notification for each message. It skips notifications while
    the main window is focused, because the feed is already visible.
 
@@ -394,26 +424,31 @@ frontend.
 - Native notifications through a small `bellcast_notify` command so title, body, priority,
   click target, and dedupe are controlled. Click focuses the window.
 - External links open in the system browser, validated `http(s)`.
-- Navigation guard: only the configured instance origin (plus the local holding/onboarding
-  pages) may load in the main webview. Everything else opens externally. This prevents
-  redirect-to-attacker + IPC exposure.
+- Navigation guard: only the bundled UI origin and the configured instance origin may load in
+  the main window. Everything else opens externally. This prevents redirect-to-attacker +
+  IPC exposure.
 - No `fs`, `shell`, or arbitrary HTTP plugin permissions.
 - Optional badge count.
 
+### Production deployment path
+
+Before the first desktop connection, the operator deploys the web app on Vercel, sets
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `BELLCAST_API_KEY` and (optionally)
+`CRON_SECRET` in that Vercel project, and deploys it. The resulting Vercel deployment URL is the
+instance URL, and the `BELLCAST_API_KEY` value stored on the Vercel environment is the API key
+the desktop app should use.
+
 ### Updates and distribution
 
-- `tauri-plugin-updater` with a signed manifest hosted on GitHub Releases.
-- Signing keys in CI secrets from the first release.
-- macOS: Developer ID + notarization (Apple Developer account required).
-- Windows: code signing recommended (otherwise SmartScreen warnings).
-- Linux: AppImage + `.deb`.
+- Signed GitHub Releases artifacts for Linux (`.deb`, `.rpm`, `.AppImage`), macOS and Windows.
 - CI matrix: `tauri-apps/tauri-action` on tag, three OSes, draft release.
+- Install instructions live in the [landing/docs site](https://bellcast.vercel.app/docs/desktop)
+  and in the repository README.
 
 ### Known limitation
 
-Cold start requires network to load the remote UI; after the first load the SPA and IndexedDB
-cache keep working offline. Bundling a static build of the same UI later removes this, at the
-cost of a second build target.
+Cold start requires network for the first health check; after that the bundled UI keeps working
+offline through its local state and cache.
 
 ---
 
@@ -480,7 +515,8 @@ There is **no anon key and no `NEXT_PUBLIC_SUPABASE_*`** in v1.
      https://your-app.vercel.app/api/v1/publish/test
    ```
 
-7. Desktop: install, enter instance URL + key, enable start at login.
+7. Desktop: install, enter the Vercel deployment URL as the instance URL and the
+   `BELLCAST_API_KEY` from the Vercel environment as the API key, then enable start at login.
 
 Optional: a Vercel “Deploy” button and the Supabase integration for env provisioning.
 
@@ -512,7 +548,6 @@ Optional: a Vercel “Deploy” button and the Supabase integration for env prov
 | Vercel Hobby is non-commercial | Cannot host a paid service | Pro for hosted; Hobby fine for self-host |
 | Supabase free project pauses after 7 days idle | Notifications stop | Document Pro; polling usually keeps it active |
 | Web notifications need an open tab | No closed-tab delivery | Desktop app in tray is the background client |
-| Remote UI cold start needs network | Blank app if offline at launch | Holding page; bundled UI later |
 | No attachments | Bigger payloads impossible | v2 with Supabase Storage |
 | Single instance, single key | All topics share one trust boundary | Fine by definition; per-topic keys later |
 | Read state is per device | No cross-device unread sync | Local only in v1 |
@@ -534,11 +569,12 @@ Optional: a Vercel “Deploy” button and the Supabase integration for env prov
 - Integration tests against local Supabase; prove anon cannot read.
 
 **M2 — Web app**
-- `/connect`, `/app`, topic sidebar, message list, compose, settings.
+- `/connect`, `/app`, Slack-style sidebar, message rows, day dividers, compose, settings.
 - Dexie cache, sync loop, gap fill, reconnect, unread.
 - Browser notifications while open.
 
 **M3 — Desktop**
+- Bundled Slack-style frontend instead of remote web UI; Rust backend calls the API directly.
 - Onboarding, keychain, runtime capability, holding page, bootstrap injection.
 - Tray, autostart, single instance, native notifications, navigation guard.
 - Updater and signed release workflow.
@@ -547,7 +583,7 @@ Optional: a Vercel “Deploy” button and the Supabase integration for env prov
 - Self-host docs and deploy button.
 - Landing/docs rewrite in `bellcast-landing` (separate PR/repo).
 - Rate limiting, CSP, e2e, health/observability.
-- First tagged release.
+- First tagged release: `v0.2.0`.
 
 ---
 
@@ -574,5 +610,5 @@ The current landing copy describes a different product. After the API is frozen:
 - Multiple API keys with labels/revocation: v2.
 - Cross-device read state: v2.
 - Optional Realtime transport via token exchange: only if long-poll latency is a problem.
-- Bundled offline desktop UI: only if offline cold start matters.
+- Bundled offline desktop UI: shipped in `v0.2.0`; remove this open item.
 - Mobile: out of scope; the responsive web UI is the mobile story for now.

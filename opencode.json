@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "groq/qwen/qwen3-32b",
+  "provider": {
+    "groq": {
+      "options": {
+        "reasoning_format": null
+      }
+    }
+  },
+  "compaction": {
+    "enabled": true,
+    "autoCompact": false,
+    "prune": true,
+    "maxTokens": 6000
+  },
+  "context": {
+    "maxTokens": 6000,
+    "maxFiles": 5
+  }
+}

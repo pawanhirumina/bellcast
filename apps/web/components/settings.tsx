@@ -21,6 +21,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import type { Health } from "@/lib/types";
+import { VERSION } from "@/lib/version";
 import { Button, cn } from "./ui";
 import { ThemeGrid } from "./theme-switcher";
 
@@ -365,7 +366,7 @@ export function SettingsScreen() {
         </Section>
 
         <div className="py-8 text-center text-[11px] text-faint">
-          Bellcast v{health?.version ?? "0.1.0"} · self-hosted ·
+          Bellcast v{health?.version ?? VERSION} · self-hosted ·
           Slack-compatible API
         </div>
       </div>
